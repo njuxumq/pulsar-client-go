@@ -108,6 +108,7 @@ type partitionProducer struct {
 	dataChan             chan *sendRequest
 	cmdChan              chan interface{}
 	connectClosedCh      chan *connectionClosed
+	connTicker           *time.Ticker
 	publishSemaphore     internal.Semaphore
 	pendingQueue         internal.BlockingQueue
 	lastSequenceID       int64
@@ -172,6 +173,7 @@ func newPartitionProducer(client *client, topic string, options *ProducerOptions
 		dataChan:         make(chan *sendRequest, maxPendingMessages),
 		cmdChan:          make(chan interface{}, 10),
 		connectClosedCh:  make(chan *connectionClosed, 10),
+		connTicker:       time.NewTicker(options.SendTimeout),
 		batchFlushTicker: time.NewTicker(batchingMaxPublishDelay),
 		compressionProvider: internal.GetCompressionProvider(pb.CompressionType(options.CompressionType),
 			compression.Level(options.CompressionLevel)),
@@ -570,6 +572,12 @@ func (p *partitionProducer) runEventsLoop() {
 		case connectionClosed := <-p.connectClosedCh:
 			p.log.Info("runEventsLoop will reconnect in producer")
 			p.reconnectToBroker(connectionClosed)
+		case <-p.connTicker.C:
+			if p._getConn().IsClosed() {
+				p.log.Warnf("%v connection is closed", p._getConn().ID())
+				// unexpected case, not know assignedBrokerURL
+				p.reconnectToBroker(&connectionClosed{assignedBrokerURL: ""})
+			}
 		case <-p.batchFlushTicker.C:
 			p.internalFlushCurrentBatch()
 		}
