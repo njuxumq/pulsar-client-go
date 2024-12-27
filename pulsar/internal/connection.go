@@ -85,6 +85,7 @@ type Connection interface {
 	ID() string
 	GetMaxMessageSize() int32
 	Close()
+	IsClosed() bool
 	WaitForClose() <-chan struct{}
 	IsProxied() bool
 }
@@ -1045,6 +1046,11 @@ func (c *connection) Close() {
 
 		c.metrics.ConnectionsClosed.Inc()
 	})
+}
+
+// IsClosed return true when connection is closed
+func (c *connection) IsClosed() bool {
+	return c.getState() == connectionClosed
 }
 
 func (c *connection) closeAndEmptyObservers() ([]ConnectionListener, []ConsumerHandler, net.Conn) {

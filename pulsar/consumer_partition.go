@@ -165,6 +165,7 @@ type partitionConsumer struct {
 	eventsCh        chan interface{}
 	connectedCh     chan struct{}
 	connectClosedCh chan *connectionClosed
+	connTicker      time.Ticker
 	closeCh         chan struct{}
 	clearQueueCh    chan func(id *trackingMessageID)
 
@@ -343,6 +344,7 @@ func newPartitionConsumer(parent Consumer, client *client, options *partitionCon
 		connectedCh:          make(chan struct{}),
 		messageCh:            messageCh,
 		connectClosedCh:      make(chan *connectionClosed, 1),
+		connTicker:           *time.NewTicker(10 * time.Second),
 		closeCh:              make(chan struct{}),
 		clearQueueCh:         make(chan func(id *trackingMessageID)),
 		compressionProviders: sync.Map{},
@@ -1606,6 +1608,12 @@ func (pc *partitionConsumer) runEventsLoop() {
 			case connectionClosed := <-pc.connectClosedCh:
 				pc.log.Debug("runEventsLoop will reconnect")
 				pc.reconnectToBroker(connectionClosed)
+			case <-pc.connTicker.C:
+				if pc._getConn().IsClosed() {
+					pc.log.Warnf("%v connection is closed", pc._getConn().ID())
+					// unexpected case, not know assignedBrokerURL
+					pc.reconnectToBroker(&connectionClosed{assignedBrokerURL: ""})
+				}
 			}
 		}
 	}()
